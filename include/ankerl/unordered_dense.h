@@ -96,6 +96,12 @@
 #        define ANKERL_UNORDERED_DENSE_UNLIKELY(x) (x) // NOLINT(cppcoreguidelines-macro-usage)
 #    endif
 
+template <class A, class B>
+struct pair {
+    A first;
+    B second;
+};
+
 namespace ankerl::unordered_dense {
 inline namespace ANKERL_UNORDERED_DENSE_NAMESPACE {
 
@@ -386,7 +392,7 @@ public:
     using value_container_type = std::conditional_t<
         is_detected_v<detect_iterator, AllocatorOrContainer>,
         AllocatorOrContainer,
-        typename std::vector<typename std::conditional_t<std::is_void_v<T>, Key, std::pair<Key, T>>, AllocatorOrContainer>>;
+        typename std::vector<typename std::conditional_t<std::is_void_v<T>, Key, pair<Key, T>>, AllocatorOrContainer>>;
 
 private:
     using bucket_alloc =
@@ -637,22 +643,20 @@ private:
     }
 
     template <class K, class M>
-    auto do_insert_or_assign(K&& key, M&& mapped) -> std::pair<iterator, bool> {
-        auto it_isinserted = try_emplace(std::forward<K>(key), std::forward<M>(mapped));
+    auto do_insert_or_assign(K&& key, M&& mapped) -> pair<iterator, bool> {
+        auto it_isinserted = try_emplace(static_cast<K&&>(key), static_cast<M&&>(mapped));
         if (!it_isinserted.second) {
-            it_isinserted.first->second = std::forward<M>(mapped);
+            it_isinserted.first->second = static_cast<M&&>(mapped);
         }
         return it_isinserted;
     }
 
     template <typename K, typename... Args>
     auto do_place_element(dist_and_fingerprint_type dist_and_fingerprint, value_idx_type bucket_idx, K&& key, Args&&... args)
-        -> std::pair<iterator, bool> {
+        -> pair<iterator, bool> {
 
         // emplace the new value. If that throws an exception, no harm done; index is still in a valid state
-        m_values.emplace_back(std::piecewise_construct,
-                              std::forward_as_tuple(std::forward<K>(key)),
-                              std::forward_as_tuple(std::forward<Args>(args)...));
+        m_values.push_back({static_cast<K&&>(key), {static_cast<Args&&>(args)...}});
 
         // place element and shift up until we find an empty spot
         auto value_idx = static_cast<value_idx_type>(m_values.size() - 1);
@@ -661,7 +665,7 @@ private:
     }
 
     template <typename K, typename... Args>
-    auto do_try_emplace(K&& key, Args&&... args) -> std::pair<iterator, bool> {
+    auto do_try_emplace(K&& key, Args&&... args) -> pair<iterator, bool> {
         if (ANKERL_UNORDERED_DENSE_UNLIKELY(is_full())) {
             increase_size();
         }
@@ -677,7 +681,7 @@ private:
                     return {begin() + static_cast<difference_type>(bucket->m_value_idx), false};
                 }
             } else if (dist_and_fingerprint > bucket->m_dist_and_fingerprint) {
-                return do_place_element(dist_and_fingerprint, bucket_idx, std::forward<K>(key), std::forward<Args>(args)...);
+                return do_place_element(dist_and_fingerprint, bucket_idx, static_cast<K&&>(key), static_cast<Args&&>(args)...);
             }
             dist_and_fingerprint = dist_inc(dist_and_fingerprint);
             bucket_idx = next(bucket_idx);
@@ -927,17 +931,17 @@ public:
         clear_buckets();
     }
 
-    auto insert(value_type const& value) -> std::pair<iterator, bool> {
+    auto insert(value_type const& value) -> pair<iterator, bool> {
         return emplace(value);
     }
 
-    auto insert(value_type&& value) -> std::pair<iterator, bool> {
+    auto insert(value_type&& value) -> pair<iterator, bool> {
         return emplace(std::move(value));
     }
 
     template <class P, std::enable_if_t<std::is_constructible_v<value_type, P&&>, bool> = true>
-    auto insert(P&& value) -> std::pair<iterator, bool> {
-        return emplace(std::forward<P>(value));
+    auto insert(P&& value) -> pair<iterator, bool> {
+        return emplace(static_cast<P&&>(value));
     }
 
     auto insert(const_iterator /*hint*/, value_type const& value) -> iterator {
@@ -950,7 +954,7 @@ public:
 
     template <class P, std::enable_if_t<std::is_constructible_v<value_type, P&&>, bool> = true>
     auto insert(const_iterator /*hint*/, P&& value) -> iterator {
-        return insert(std::forward<P>(value)).first;
+        return insert(static_cast<P&&>(value)).first;
     }
 
     template <class InputIt>
@@ -1027,13 +1031,13 @@ public:
     }
 
     template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
-    auto insert_or_assign(Key const& key, M&& mapped) -> std::pair<iterator, bool> {
-        return do_insert_or_assign(key, std::forward<M>(mapped));
+    auto insert_or_assign(Key const& key, M&& mapped) -> pair<iterator, bool> {
+        return do_insert_or_assign(key, static_cast<M&&>(mapped));
     }
 
     template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
-    auto insert_or_assign(Key&& key, M&& mapped) -> std::pair<iterator, bool> {
-        return do_insert_or_assign(std::move(key), std::forward<M>(mapped));
+    auto insert_or_assign(Key&& key, M&& mapped) -> pair<iterator, bool> {
+        return do_insert_or_assign(std::move(key), static_cast<M&&>(mapped));
     }
 
     template <typename K,
@@ -1042,18 +1046,18 @@ public:
               typename H = Hash,
               typename KE = KeyEqual,
               std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
-    auto insert_or_assign(K&& key, M&& mapped) -> std::pair<iterator, bool> {
-        return do_insert_or_assign(std::forward<K>(key), std::forward<M>(mapped));
+    auto insert_or_assign(K&& key, M&& mapped) -> pair<iterator, bool> {
+        return do_insert_or_assign(static_cast<K&&>(key), static_cast<M&&>(mapped));
     }
 
     template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
     auto insert_or_assign(const_iterator /*hint*/, Key const& key, M&& mapped) -> iterator {
-        return do_insert_or_assign(key, std::forward<M>(mapped)).first;
+        return do_insert_or_assign(key, static_cast<M&&>(mapped)).first;
     }
 
     template <class M, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
     auto insert_or_assign(const_iterator /*hint*/, Key&& key, M&& mapped) -> iterator {
-        return do_insert_or_assign(std::move(key), std::forward<M>(mapped)).first;
+        return do_insert_or_assign(std::move(key), static_cast<M&&>(mapped)).first;
     }
 
     template <typename K,
@@ -1063,7 +1067,7 @@ public:
               typename KE = KeyEqual,
               std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
     auto insert_or_assign(const_iterator /*hint*/, K&& key, M&& mapped) -> iterator {
-        return do_insert_or_assign(std::forward<K>(key), std::forward<M>(mapped)).first;
+        return do_insert_or_assign(static_cast<K&&>(key), static_cast<M&&>(mapped)).first;
     }
 
     // Single arguments for unordered_set can be used without having to construct the value_type
@@ -1072,7 +1076,7 @@ public:
               typename H = Hash,
               typename KE = KeyEqual,
               std::enable_if_t<!is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
-    auto emplace(K&& key) -> std::pair<iterator, bool> {
+    auto emplace(K&& key) -> pair<iterator, bool> {
         if (is_full()) {
             increase_size();
         }
@@ -1092,7 +1096,7 @@ public:
         }
 
         // value is new, insert element first, so when exception happens we are in a valid state
-        m_values.emplace_back(std::forward<K>(key));
+        m_values.emplace_back(static_cast<K&&>(key));
         // now place the bucket and shift up until we find an empty spot
         auto value_idx = static_cast<value_idx_type>(m_values.size() - 1);
         place_and_shift_up({dist_and_fingerprint, value_idx}, bucket_idx);
@@ -1100,14 +1104,14 @@ public:
     }
 
     template <class... Args>
-    auto emplace(Args&&... args) -> std::pair<iterator, bool> {
+    auto emplace(Args&&... args) -> pair<iterator, bool> {
         if (is_full()) {
             increase_size();
         }
 
         // we have to instantiate the value_type to be able to access the key.
         // 1. emplace_back the object so it is constructed. 2. If the key is already there, pop it later in the loop.
-        auto& key = get_key(m_values.emplace_back(std::forward<Args>(args)...));
+        auto& key = get_key(m_values.emplace_back(static_cast<Args&&>(args)...));
         auto hash = mixed_hash(key);
         auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
         auto bucket_idx = bucket_idx_from_hash(hash);
@@ -1131,27 +1135,27 @@ public:
 
     template <class... Args>
     auto emplace_hint(const_iterator /*hint*/, Args&&... args) -> iterator {
-        return emplace(std::forward<Args>(args)...).first;
+        return emplace(static_cast<Args&&>(args)...).first;
     }
 
     template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
-    auto try_emplace(Key const& key, Args&&... args) -> std::pair<iterator, bool> {
-        return do_try_emplace(key, std::forward<Args>(args)...);
+    auto try_emplace(Key const& key, Args&&... args) -> pair<iterator, bool> {
+        return do_try_emplace(key, static_cast<Args&&>(args)...);
     }
 
     template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
-    auto try_emplace(Key&& key, Args&&... args) -> std::pair<iterator, bool> {
-        return do_try_emplace(std::move(key), std::forward<Args>(args)...);
+    auto try_emplace(Key&& key, Args&&... args) -> pair<iterator, bool> {
+        return do_try_emplace(std::move(key), static_cast<Args&&>(args)...);
     }
 
     template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
     auto try_emplace(const_iterator /*hint*/, Key const& key, Args&&... args) -> iterator {
-        return do_try_emplace(key, std::forward<Args>(args)...).first;
+        return do_try_emplace(key, static_cast<Args&&>(args)...).first;
     }
 
     template <class... Args, typename Q = T, std::enable_if_t<is_map_v<Q>, bool> = true>
     auto try_emplace(const_iterator /*hint*/, Key&& key, Args&&... args) -> iterator {
-        return do_try_emplace(std::move(key), std::forward<Args>(args)...).first;
+        return do_try_emplace(std::move(key), static_cast<Args&&>(args)...).first;
     }
 
     template <
@@ -1162,8 +1166,8 @@ public:
         typename KE = KeyEqual,
         std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE> && is_neither_convertible_v<K&&, iterator, const_iterator>,
                          bool> = true>
-    auto try_emplace(K&& key, Args&&... args) -> std::pair<iterator, bool> {
-        return do_try_emplace(std::forward<K>(key), std::forward<Args>(args)...);
+    auto try_emplace(K&& key, Args&&... args) -> pair<iterator, bool> {
+        return do_try_emplace(static_cast<K&&>(key), static_cast<Args&&>(args)...);
     }
 
     template <
@@ -1175,7 +1179,7 @@ public:
         std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE> && is_neither_convertible_v<K&&, iterator, const_iterator>,
                          bool> = true>
     auto try_emplace(const_iterator /*hint*/, K&& key, Args&&... args) -> iterator {
-        return do_try_emplace(std::forward<K>(key), std::forward<Args>(args)...).first;
+        return do_try_emplace(static_cast<K&&>(key), static_cast<Args&&>(args)...).first;
     }
 
     auto erase(iterator it) -> iterator {
@@ -1225,7 +1229,7 @@ public:
 
     template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
     auto erase(K&& key) -> size_t {
-        return do_erase_key(std::forward<K>(key));
+        return do_erase_key(static_cast<K&&>(key));
     }
 
     void swap(table& other) noexcept(noexcept(std::is_nothrow_swappable_v<value_container_type>&&
@@ -1280,7 +1284,7 @@ public:
               typename KE = KeyEqual,
               std::enable_if_t<is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
     auto operator[](K&& key) -> Q& {
-        return try_emplace(std::forward<K>(key)).first->second;
+        return try_emplace(static_cast<K&&>(key)).first->second;
     }
 
     auto count(Key const& key) const -> size_t {
@@ -1319,24 +1323,24 @@ public:
         return find(key) != end();
     }
 
-    auto equal_range(Key const& key) -> std::pair<iterator, iterator> {
+    auto equal_range(Key const& key) -> pair<iterator, iterator> {
         auto it = do_find(key);
         return {it, it == end() ? end() : it + 1};
     }
 
-    auto equal_range(const Key& key) const -> std::pair<const_iterator, const_iterator> {
-        auto it = do_find(key);
-        return {it, it == end() ? end() : it + 1};
-    }
-
-    template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
-    auto equal_range(K const& key) -> std::pair<iterator, iterator> {
+    auto equal_range(const Key& key) const -> pair<const_iterator, const_iterator> {
         auto it = do_find(key);
         return {it, it == end() ? end() : it + 1};
     }
 
     template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
-    auto equal_range(K const& key) const -> std::pair<const_iterator, const_iterator> {
+    auto equal_range(K const& key) -> pair<iterator, iterator> {
+        auto it = do_find(key);
+        return {it, it == end() ? end() : it + 1};
+    }
+
+    template <class K, class H = Hash, class KE = KeyEqual, std::enable_if_t<is_transparent_v<H, KE>, bool> = true>
+    auto equal_range(K const& key) const -> pair<const_iterator, const_iterator> {
         auto it = do_find(key);
         return {it, it == end() ? end() : it + 1};
     }
@@ -1444,7 +1448,7 @@ template <class Key,
           class T,
           class Hash = hash<Key>,
           class KeyEqual = std::equal_to<Key>,
-          class AllocatorOrContainer = std::allocator<std::pair<Key, T>>,
+          class AllocatorOrContainer = std::allocator<pair<Key, T>>,
           class Bucket = bucket_type::standard>
 using map = detail::table<Key, T, Hash, KeyEqual, AllocatorOrContainer, Bucket>;
 
@@ -1464,7 +1468,7 @@ template <class Key,
           class Hash = hash<Key>,
           class KeyEqual = std::equal_to<Key>,
           class Bucket = bucket_type::standard>
-using map = detail::table<Key, T, Hash, KeyEqual, std::pmr::polymorphic_allocator<std::pair<Key, T>>, Bucket>;
+using map = detail::table<Key, T, Hash, KeyEqual, std::pmr::polymorphic_allocator<pair<Key, T>>, Bucket>;
 
 template <class Key, class Hash = hash<Key>, class KeyEqual = std::equal_to<Key>, class Bucket = bucket_type::standard>
 using set = detail::table<Key, void, Hash, KeyEqual, std::pmr::polymorphic_allocator<Key>, Bucket>;

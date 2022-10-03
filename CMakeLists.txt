@@ -6,6 +6,10 @@ project("unordered_dense"
 
 include(GNUInstallDirs)
 
+option(BUILD_EXAMPLES
+    "Build examples"
+    ON)
+
 # determine whether this is a standalone project or included by other projects
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     set(_unordered_dense_is_toplevel_project TRUE)
@@ -58,4 +62,9 @@ if(_unordered_dense_is_toplevel_project)
     install(
         DIRECTORY ${PROJECT_SOURCE_DIR}/include/ankerl
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+
+if(BUILD_EXAMPLES)
+    add_executable(example example/main.cpp)
+    target_link_libraries(example unordered_dense)
 endif()
